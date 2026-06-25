@@ -1,0 +1,13 @@
+{
+  "name": "cloud-efs",
+  "version": "1.0.0",
+  "description": "Cloud-Based Encrypted File System — Zero-Knowledge, AES-256-GCM, client-side encryption prototype",
+  "private": true,
+  "scripts": {
+    "dev": "npx serve . -p 8766",
+    "start": "npx serve ."
+  },
+  "keywords": ["encryption", "cloud", "file-system", "aes-256", "zero-knowledge"],
+  "author": "",
+  "license": "MIT"
+}

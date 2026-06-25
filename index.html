@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CloudEFS — Encrypted File System</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#060c18;--bg2:#0d1526;--bg3:#111d35;--bg4:#162040;
+  --border:rgba(255,255,255,0.07);--border2:rgba(96,165,250,0.2);
+  --blue:#3b82f6;--blue2:#60a5fa;--purple:#8b5cf6;--green:#10b981;
+  --red:#ef4444;--yellow:#f59e0b;--text:#e2e8f0;--muted:#64748b;--muted2:#94a3b8;
+  --font:'Inter',sans-serif;--mono:'JetBrains Mono',monospace;
+}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;overflow:hidden}
+
+/* ── AUTH SCREEN ── */
+#authScreen{
+  position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at 30% 40%,rgba(59,130,246,0.12) 0%,transparent 60%),
+             radial-gradient(ellipse at 70% 70%,rgba(139,92,246,0.1) 0%,transparent 60%),
+             var(--bg);
+  z-index:1000;
+}
+.auth-box{
+  background:rgba(13,21,38,0.9);border:1px solid var(--border2);
+  border-radius:24px;padding:48px;width:420px;text-align:center;
+  backdrop-filter:blur(20px);box-shadow:0 32px 80px rgba(0,0,0,0.5);
+}
+.auth-logo{font-size:2.5rem;margin-bottom:16px}
+.auth-box h1{font-size:1.6rem;font-weight:800;margin-bottom:6px;
+  background:linear-gradient(135deg,#93c5fd,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.auth-box p{color:var(--muted2);font-size:0.88rem;margin-bottom:32px}
+.input-wrap{position:relative;margin-bottom:16px;text-align:left}
+.input-wrap label{display:block;font-size:0.78rem;font-weight:600;color:var(--muted2);margin-bottom:6px;letter-spacing:.5px;text-transform:uppercase}
+.input-wrap input{
+  width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);
+  border-radius:10px;padding:12px 16px;color:var(--text);font-family:var(--font);font-size:0.9rem;
+  outline:none;transition:border-color .2s;
+}
+.input-wrap input:focus{border-color:var(--blue2)}
+.btn{
+  width:100%;padding:13px;border:none;border-radius:10px;cursor:pointer;
+  font-family:var(--font);font-size:0.9rem;font-weight:700;transition:all .2s;
+  background:linear-gradient(135deg,var(--blue),var(--purple));color:#fff;
+  letter-spacing:.3px;
+}
+.btn:hover{opacity:0.9;transform:translateY(-1px);box-shadow:0 8px 24px rgba(59,130,246,0.3)}
+.btn:active{transform:translateY(0)}
+.btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--blue2);width:auto;padding:8px 18px;font-size:0.82rem}
+.auth-tabs{display:flex;gap:0;margin-bottom:28px;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.auth-tab{flex:1;padding:10px;background:none;border:none;color:var(--muted);cursor:pointer;font-family:var(--font);font-size:0.85rem;font-weight:600;transition:all .2s}
+.auth-tab.active{background:rgba(59,130,246,0.15);color:var(--blue2)}
+.strength-bar{height:3px;border-radius:2px;margin-top:6px;transition:all .3s;background:var(--border)}
+.strength-bar.weak{background:var(--red)}
+.strength-bar.medium{background:var(--yellow)}
+.strength-bar.strong{background:var(--green)}
+
+/* ── APP LAYOUT ── */
+#app{display:none;height:100vh;display:flex;flex-direction:column}
+#app.visible{display:flex}
+
+/* Topbar */
+.topbar{
+  height:56px;background:rgba(13,21,38,0.95);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 20px;gap:16px;flex-shrink:0;
+  backdrop-filter:blur(12px);position:relative;z-index:10;
+}
+.topbar-logo{font-size:0.95rem;font-weight:800;display:flex;align-items:center;gap:8px;
+  background:linear-gradient(135deg,#60a5fa,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.topbar-logo .icon{font-size:1.2rem;-webkit-text-fill-color:initial;background:none}
+.topbar-spacer{flex:1}
+.topbar-stat{font-size:0.75rem;color:var(--muted);display:flex;align-items:center;gap:6px;
+  background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:5px 12px}
+.topbar-stat .dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--purple));
+  display:flex;align-items:center;justify-content:center;font-size:0.8rem;font-weight:700;cursor:pointer;flex-shrink:0}
+.topbar-search{
+  flex:1;max-width:320px;position:relative;
+}
+.topbar-search input{
+  width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;
+  padding:7px 12px 7px 34px;color:var(--text);font-family:var(--font);font-size:0.82rem;outline:none;transition:border-color .2s;
+}
+.topbar-search input:focus{border-color:var(--border2)}
+.topbar-search .s-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:0.9rem;pointer-events:none}
+
+/* Main area */
+.main{display:flex;flex:1;overflow:hidden}
+
+/* Sidebar */
+.sidebar{
+  width:220px;background:var(--bg2);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;
+}
+.sidebar-section{padding:16px 12px 8px;font-size:0.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;
+  margin:1px 8px;cursor:pointer;font-size:0.84rem;color:var(--muted2);transition:all .15s;
+}
+.nav-item:hover{background:rgba(255,255,255,0.05);color:var(--text)}
+.nav-item.active{background:rgba(59,130,246,0.15);color:var(--blue2);font-weight:600}
+.nav-item .ni-icon{font-size:1rem;width:20px;text-align:center}
+.nav-item .ni-count{margin-left:auto;font-size:0.7rem;background:rgba(96,165,250,0.15);color:var(--blue2);padding:2px 7px;border-radius:10px;font-weight:700}
+.sidebar-divider{border:none;border-top:1px solid var(--border);margin:8px 0}
+.storage-bar-wrap{padding:12px 16px}
+.storage-bar-wrap .lbl{font-size:0.72rem;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between}
+.storage-bar{height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden}
+.storage-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--blue),var(--purple));transition:width .5s}
+
+/* Content area */
+.content{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+
+/* Toolbar */
+.toolbar{
+  height:50px;border-bottom:1px solid var(--border);display:flex;align-items:center;
+  padding:0 20px;gap:10px;flex-shrink:0;background:var(--bg2);
+}
+.toolbar .breadcrumb{display:flex;align-items:center;gap:6px;font-size:0.84rem;color:var(--muted)}
+.toolbar .breadcrumb span{color:var(--blue2);cursor:pointer;font-weight:600}
+.toolbar .breadcrumb span:hover{text-decoration:underline}
+.tool-spacer{flex:1}
+.tool-btn{
+  display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;
+  background:none;border:1px solid var(--border);color:var(--muted2);cursor:pointer;
+  font-family:var(--font);font-size:0.8rem;font-weight:500;transition:all .2s;
+}
+.tool-btn:hover{border-color:var(--border2);color:var(--blue2);background:rgba(59,130,246,0.07)}
+.tool-btn.primary{background:linear-gradient(135deg,var(--blue),var(--purple));border:none;color:#fff;font-weight:600}
+.tool-btn.primary:hover{opacity:0.9;transform:translateY(-1px);box-shadow:0 6px 20px rgba(59,130,246,0.3)}
+
+/* File grid */
+.file-area{flex:1;overflow-y:auto;padding:20px}
+.file-area::-webkit-scrollbar{width:6px}
+.file-area::-webkit-scrollbar-track{background:transparent}
+.file-area::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--muted);gap:12px}
+.empty-state .es-icon{font-size:3.5rem;opacity:0.3}
+.empty-state p{font-size:0.88rem}
+
+.view-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.view-list{display:flex;flex-direction:column;gap:2px}
+
+.file-card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:12px;
+  padding:16px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden;
+}
+.file-card:hover{border-color:var(--border2);transform:translateY(-2px);background:var(--bg3)}
+.file-card.selected{border-color:var(--blue);background:rgba(59,130,246,0.08)}
+.file-card .fc-icon{font-size:2.2rem;margin-bottom:10px}
+.file-card .fc-name{font-size:0.8rem;font-weight:600;color:var(--text);word-break:break-all;margin-bottom:4px;line-height:1.3}
+.file-card .fc-meta{font-size:0.68rem;color:var(--muted);display:flex;gap:6px;align-items:center}
+.file-card .enc-badge{font-size:0.6rem;background:rgba(16,185,129,0.15);color:var(--green);border:1px solid rgba(16,185,129,0.3);padding:1px 5px;border-radius:4px;font-weight:700}
+
+.file-row{
+  display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;
+  cursor:pointer;transition:all .15s;border:1px solid transparent;
+}
+.file-row:hover{background:var(--bg3);border-color:var(--border)}
+.file-row.selected{background:rgba(59,130,246,0.08);border-color:var(--blue)}
+.file-row .fr-icon{font-size:1.4rem;flex-shrink:0}
+.file-row .fr-name{font-size:0.85rem;font-weight:500;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-row .fr-size{font-size:0.75rem;color:var(--muted);width:70px;text-align:right;flex-shrink:0}
+.file-row .fr-date{font-size:0.75rem;color:var(--muted);width:100px;text-align:right;flex-shrink:0}
+.file-row .fr-enc{font-size:0.65rem;background:rgba(16,185,129,0.15);color:var(--green);border:1px solid rgba(16,185,129,0.3);padding:2px 6px;border-radius:4px;font-weight:700;flex-shrink:0}
+.file-row .fr-actions{display:flex;gap:4px;opacity:0;transition:opacity .15s;flex-shrink:0}
+.file-row:hover .fr-actions{opacity:1}
+.icon-btn{background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.8rem;color:var(--muted2);transition:all .15s}
+.icon-btn:hover{color:var(--blue2);border-color:var(--border2)}
+.icon-btn.danger:hover{color:var(--red);border-color:rgba(239,68,68,0.4)}
+
+/* Detail panel */
+.detail-panel{
+  width:280px;border-left:1px solid var(--border);background:var(--bg2);
+  padding:20px;display:flex;flex-direction:column;gap:16px;overflow-y:auto;
+  flex-shrink:0;
+}
+.detail-panel.hidden{display:none}
+.dp-title{font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}
+.dp-icon{font-size:3rem;text-align:center;padding:20px;background:var(--bg3);border-radius:12px}
+.dp-name{font-size:0.95rem;font-weight:700;color:var(--text);word-break:break-all;line-height:1.4}
+.dp-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
+.dp-row:last-child{border-bottom:none}
+.dp-row .dk{font-size:0.75rem;color:var(--muted)}
+.dp-row .dv{font-size:0.75rem;color:var(--muted2);font-weight:500;font-family:var(--mono);text-align:right;max-width:140px;word-break:break-all}
+.dp-row .dv.green{color:var(--green)}
+.dp-actions{display:flex;flex-direction:column;gap:8px}
+.dp-btn{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:9px;border-radius:8px;border:1px solid var(--border);
+  background:none;color:var(--muted2);cursor:pointer;font-family:var(--font);font-size:0.82rem;font-weight:500;transition:all .2s;
+}
+.dp-btn:hover{border-color:var(--border2);color:var(--blue2);background:rgba(59,130,246,0.07)}
+.dp-btn.danger:hover{border-color:rgba(239,68,68,0.4);color:var(--red)}
+.dp-btn.primary{background:linear-gradient(135deg,var(--blue),var(--purple));border:none;color:#fff;font-weight:600}
+
+/* Activity log */
+.activity-panel{
+  width:100%;border-top:1px solid var(--border);background:var(--bg2);
+  max-height:160px;overflow-y:auto;flex-shrink:0;
+}
+.activity-panel::-webkit-scrollbar{width:4px}
+.activity-panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.06);border-radius:2px}
+.act-header{padding:8px 20px;font-size:0.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2)}
+.act-item{display:flex;align-items:center;gap:12px;padding:7px 20px;border-bottom:1px solid rgba(255,255,255,0.03)}
+.act-icon{font-size:0.85rem;width:20px;text-align:center;flex-shrink:0}
+.act-text{font-size:0.75rem;color:var(--muted2);flex:1;font-family:var(--mono)}
+.act-time{font-size:0.68rem;color:var(--muted);flex-shrink:0}
+
+/* Upload zone */
+.upload-zone{
+  border:2px dashed rgba(96,165,250,0.3);border-radius:12px;padding:24px;
+  text-align:center;cursor:pointer;transition:all .2s;margin-bottom:16px;
+}
+.upload-zone:hover,.upload-zone.dragover{border-color:var(--blue2);background:rgba(59,130,246,0.06)}
+.upload-zone .uz-icon{font-size:2rem;margin-bottom:8px;opacity:0.5}
+.upload-zone p{font-size:0.82rem;color:var(--muted)}
+.upload-zone strong{color:var(--blue2)}
+
+/* Toast */
+.toast-container{position:fixed;top:16px;right:16px;display:flex;flex-direction:column;gap:8px;z-index:9999}
+.toast{
+  background:var(--bg3);border:1px solid var(--border);border-radius:10px;
+  padding:12px 16px;font-size:0.82rem;min-width:240px;max-width:320px;
+  display:flex;align-items:center;gap:10px;box-shadow:0 8px 24px rgba(0,0,0,0.4);
+  animation:slideIn .3s ease;
+}
+@keyframes slideIn{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)}}
+.toast.success .t-icon{color:var(--green)}
+.toast.error .t-icon{color:var(--red)}
+.toast.info .t-icon{color:var(--blue2)}
+.toast.warning .t-icon{color:var(--yellow)}
+
+/* Progress */
+.progress-bar{height:3px;border-radius:2px;background:rgba(255,255,255,0.06);overflow:hidden;margin-top:4px}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--purple));border-radius:2px;transition:width .3s}
+
+/* Modal */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);
+  display:flex;align-items:center;justify-content:center;z-index:500;
+}
+.modal-overlay.hidden{display:none}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:16px;padding:28px;width:420px;max-width:90vw}
+.modal h3{font-size:1.1rem;font-weight:700;margin-bottom:8px;color:var(--text)}
+.modal p{font-size:0.84rem;color:var(--muted2);margin-bottom:20px;line-height:1.6}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+.modal-actions .btn{width:auto;padding:9px 20px;font-size:0.85rem}
+
+/* Key viewer */
+.key-display{
+  background:var(--bg);border:1px solid var(--border);border-radius:8px;
+  padding:12px;font-family:var(--mono);font-size:0.72rem;color:var(--green);
+  word-break:break-all;line-height:1.6;max-height:80px;overflow-y:auto;margin-bottom:16px;
+}
+
+/* Dashboard */
+#dashView{display:none}
+#dashView.active{display:flex;flex-direction:column;gap:20px;padding:24px;overflow-y:auto;flex:1}
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
+.dash-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;position:relative;overflow:hidden}
+.dash-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.dash-card.blue::before{background:linear-gradient(90deg,var(--blue),var(--blue2))}
+.dash-card.purple::before{background:linear-gradient(90deg,var(--purple),#c084fc)}
+.dash-card.green::before{background:linear-gradient(90deg,var(--green),#34d399)}
+.dash-card.yellow::before{background:linear-gradient(90deg,var(--yellow),#fbbf24)}
+.dash-card .dc-icon{font-size:1.6rem;margin-bottom:12px}
+.dash-card .dc-val{font-size:1.8rem;font-weight:800;color:var(--text);margin-bottom:2px}
+.dash-card .dc-lbl{font-size:0.75rem;color:var(--muted);font-weight:500}
+.dash-section{margin-top:4px}
+.dash-section h3{font-size:0.85rem;font-weight:700;color:var(--muted2);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+
+/* Spinner */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--blue2);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+
+.list-header{display:flex;align-items:center;gap:12px;padding:8px 14px;font-size:0.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--border);margin-bottom:4px}
+.list-header .lh-name{flex:1}
+.list-header .lh-size{width:70px;text-align:right}
+.list-header .lh-date{width:100px;text-align:right}
+.list-header .lh-enc{width:60px;text-align:right}
+.list-header .lh-act{width:70px;text-align:right}
+
+#filesView{display:none;flex:1;flex-direction:column;overflow:hidden}
+#filesView.active{display:flex}
+</style>
+</head>
+<body>
+
+<!-- Auth Screen -->
+<div id="authScreen">
+  <div class="auth-box">
+    <div class="auth-logo">🔐</div>
+    <h1>CloudEFS</h1>
+    <p>Encrypted File System — Zero-Knowledge Cloud Storage</p>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tabLogin" onclick="switchTab('login')">Unlock Vault</button>
+      <button class="auth-tab" id="tabCreate" onclick="switchTab('create')">New Vault</button>
+    </div>
+    <div id="loginForm">
+      <div class="input-wrap">
+        <label>Vault ID</label>
+        <input type="text" id="vaultId" placeholder="e.g. my-vault" value="demo-vault">
+      </div>
+      <div class="input-wrap">
+        <label>Passphrase</label>
+        <input type="password" id="passphrase" placeholder="Enter your passphrase" value="demo-passphrase-123">
+      </div>
+      <button class="btn" onclick="unlockVault()" id="loginBtn">🔓 Unlock Vault</button>
+    </div>
+    <div id="createForm" style="display:none">
+      <div class="input-wrap">
+        <label>Vault Name</label>
+        <input type="text" id="newVaultId" placeholder="e.g. my-vault">
+      </div>
+      <div class="input-wrap">
+        <label>Passphrase</label>
+        <input type="password" id="newPass" placeholder="Strong passphrase" oninput="checkStrength(this)">
+        <div class="strength-bar" id="strengthBar"></div>
+      </div>
+      <div class="input-wrap">
+        <label>Confirm Passphrase</label>
+        <input type="password" id="confirmPass" placeholder="Repeat passphrase">
+      </div>
+      <button class="btn" onclick="createVault()" id="createBtn">🏗️ Create Vault</button>
+    </div>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="app">
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="topbar-logo"><span class="icon">🔐</span>CloudEFS</div>
+    <div class="topbar-search">
+      <span class="s-icon">🔍</span>
+      <input type="text" placeholder="Search encrypted files..." id="searchInput" oninput="filterFiles(this.value)">
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-stat"><span class="dot"></span><span id="encStatus">AES-256-GCM Active</span></div>
+    <div class="topbar-stat">🔑 <span id="vaultLabel">Vault: —</span></div>
+    <div class="avatar" onclick="lockVault()" title="Lock Vault" id="userAvatar">?</div>
+  </div>
+
+  <div class="main">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-section">Navigation</div>
+      <div class="nav-item active" id="nav-dash" onclick="showView('dash')"><span class="ni-icon">📊</span>Dashboard</div>
+      <div class="nav-item" id="nav-all" onclick="showView('files','all')"><span class="ni-icon">📁</span>All Files<span class="ni-count" id="cnt-all">0</span></div>
+      <div class="nav-item" id="nav-docs" onclick="showView('files','docs')"><span class="ni-icon">📄</span>Documents</div>
+      <div class="nav-item" id="nav-images" onclick="showView('files','images')"><span class="ni-icon">🖼️</span>Images</div>
+      <div class="nav-item" id="nav-other" onclick="showView('files','other')"><span class="ni-icon">📦</span>Other</div>
+      <hr class="sidebar-divider">
+      <div class="sidebar-section">Quick Actions</div>
+      <div class="nav-item" onclick="triggerUpload()"><span class="ni-icon">⬆️</span>Upload File</div>
+      <div class="nav-item" onclick="showKeyInfo()"><span class="ni-icon">🔑</span>Key Info</div>
+      <hr class="sidebar-divider">
+      <div class="storage-bar-wrap">
+        <div class="lbl"><span>Storage Used</span><span id="storageUsed">0 B</span></div>
+        <div class="storage-bar"><div class="storage-fill" id="storageFill" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+      <!-- Dashboard View -->
+      <div id="dashView" class="active">
+        <div class="dash-grid">
+          <div class="dash-card blue"><div class="dc-icon">📁</div><div class="dc-val" id="dc-files">0</div><div class="dc-lbl">Encrypted Files</div></div>
+          <div class="dash-card green"><div class="dc-icon">🔒</div><div class="dc-val">AES-256</div><div class="dc-lbl">Encryption Algorithm</div></div>
+          <div class="dash-card purple"><div class="dc-icon">🗝️</div><div class="dc-val">PBKDF2</div><div class="dc-lbl">Key Derivation</div></div>
+          <div class="dash-card yellow"><div class="dc-icon">💾</div><div class="dc-val" id="dc-size">0 B</div><div class="dc-lbl">Total Encrypted Size</div></div>
+        </div>
+        <div class="dash-section">
+          <h3>🔐 Encryption Info</h3>
+          <div class="file-card" style="text-align:left">
+            <div class="dp-row"><span class="dk">Algorithm</span><span class="dv green">AES-256-GCM</span></div>
+            <div class="dp-row"><span class="dk">Key Derivation</span><span class="dv">PBKDF2 / SHA-256 / 600k iter</span></div>
+            <div class="dp-row"><span class="dk">IV Size</span><span class="dv">96-bit (random per file)</span></div>
+            <div class="dp-row"><span class="dk">Auth Tag</span><span class="dv">128-bit GCM tag</span></div>
+            <div class="dp-row"><span class="dk">Key Size</span><span class="dv">256-bit</span></div>
+            <div class="dp-row"><span class="dk">Salt</span><span class="dv" id="saltDisplay">—</span></div>
+            <div class="dp-row"><span class="dk">Storage</span><span class="dv">IndexedDB (local sim)</span></div>
+          </div>
+        </div>
+        <div class="dash-section">
+          <h3>⚡ Quick Upload</h3>
+          <div class="upload-zone" id="dashUploadZone" onclick="triggerUpload()" ondragover="dragOver(event)" ondrop="dropFiles(event)" ondragleave="dragLeave(event)">
+            <div class="uz-icon">📤</div>
+            <p>Drop files here or <strong>click to browse</strong></p>
+            <p style="margin-top:4px;font-size:0.75rem;color:var(--muted)">Files are encrypted before storage</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Files View -->
+      <div id="filesView">
+        <div class="toolbar">
+          <div class="breadcrumb">📁 <span onclick="showView('files','all')">All Files</span> <span id="folderCrumb" style="display:none">/ <span id="folderName"></span></span></div>
+          <div class="tool-spacer"></div>
+          <button class="tool-btn" onclick="toggleView()" id="viewToggleBtn">⊞ Grid</button>
+          <button class="tool-btn primary" onclick="triggerUpload()">⬆️ Upload &amp; Encrypt</button>
+        </div>
+        <div style="display:flex;flex:1;overflow:hidden">
+          <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+            <div class="file-area" id="fileArea">
+              <div class="empty-state" id="emptyState">
+                <div class="es-icon">🗂️</div>
+                <p>No encrypted files yet</p>
+                <p style="font-size:0.78rem;margin-top:4px">Upload a file to get started</p>
+              </div>
+              <div class="view-grid" id="fileGrid" style="display:none"></div>
+              <div style="display:none" id="fileListWrap">
+                <div class="list-header"><span style="width:30px"></span><span class="lh-name">Name</span><span class="lh-size">Size</span><span class="lh-date">Modified</span><span class="lh-enc">Status</span><span class="lh-act">Actions</span></div>
+                <div id="fileList"></div>
+              </div>
+            </div>
+          </div>
+          <!-- Detail Panel -->
+          <div class="detail-panel hidden" id="detailPanel">
+            <div>
+              <div class="dp-title">File Details</div>
+              <div class="dp-icon" id="dp-icon">📄</div>
+            </div>
+            <div>
+              <div class="dp-name" id="dp-name">—</div>
+            </div>
+            <div>
+              <div class="dp-title">Properties</div>
+              <div class="dp-row"><span class="dk">Size</span><span class="dv" id="dp-size">—</span></div>
+              <div class="dp-row"><span class="dk">Encrypted Size</span><span class="dv" id="dp-encsize">—</span></div>
+              <div class="dp-row"><span class="dk">Algorithm</span><span class="dv green">AES-256-GCM</span></div>
+              <div class="dp-row"><span class="dk">IV</span><span class="dv" id="dp-iv">—</span></div>
+              <div class="dp-row"><span class="dk">Status</span><span class="dv green" id="dp-status">Encrypted</span></div>
+              <div class="dp-row"><span class="dk">Uploaded</span><span class="dv" id="dp-date">—</span></div>
+            </div>
+            <div class="dp-actions">
+              <button class="dp-btn primary" onclick="downloadSelected()">⬇️ Decrypt &amp; Download</button>
+              <button class="dp-btn" onclick="shareSelected()">🔗 Share (Copy Key)</button>
+              <button class="dp-btn danger" onclick="deleteSelected()">🗑️ Delete</button>
+            </div>
+          </div>
+        </div>
+        <!-- Activity Log -->
+        <div class="activity-panel">
+          <div class="act-header">🛡️ Audit Log</div>
+          <div id="actLog"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden file input -->
+<input type="file" id="fileInput" multiple style="display:none" onchange="handleFiles(this.files)">
+
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Key Info Modal -->
+<div class="modal-overlay hidden" id="keyModal">
+  <div class="modal">
+    <h3>🔑 Active Key Information</h3>
+    <p>Your master key is derived from your passphrase using PBKDF2 with 600,000 iterations. The raw key never leaves your device.</p>
+    <div class="dp-title" style="margin-bottom:6px">Key Fingerprint (SHA-256 of derived key)</div>
+    <div class="key-display" id="keyFingerprint">Computing...</div>
+    <div class="dp-title" style="margin-bottom:6px">Key Details</div>
+    <div class="dp-row"><span class="dk">Algorithm</span><span class="dv green">AES-256-GCM</span></div>
+    <div class="dp-row"><span class="dk">Derivation</span><span class="dv">PBKDF2-SHA256</span></div>
+    <div class="dp-row"><span class="dk">Iterations</span><span class="dv">600,000</span></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('keyModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Share Modal -->
+<div class="modal-overlay hidden" id="shareModal">
+  <div class="modal">
+    <h3>🔗 Share File</h3>
+    <p>The file key is exported and wrapped. Share this with the recipient securely — they need this to decrypt the file.</p>
+    <div class="dp-title" style="margin-bottom:6px">Wrapped File Key</div>
+    <div class="key-display" id="shareKey">—</div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="copyShareKey()">📋 Copy Key</button>
+      <button class="btn btn-ghost" onclick="closeModal('shareModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── STATE ───
+let masterKey = null, vaultSalt = null, vaultId = null, userName = '';
+let allFiles = [], selectedFileId = null, currentView = 'grid', currentFilter = 'all';
+const DB_NAME = 'cloudefs_db', DB_VERSION = 1, STORE = 'files', META_STORE = 'meta';
+let db = null;
+
+// ─── INDEXEDDB ───
+function openDB(){
+  return new Promise((res,rej)=>{
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e=>{
+      const d = e.target.result;
+      if(!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE,{keyPath:'id'});
+      if(!d.objectStoreNames.contains(META_STORE)) d.createObjectStore(META_STORE,{keyPath:'key'});
+    };
+    req.onsuccess = e=>{ db = e.target.result; res(db); };
+    req.onerror = ()=>rej(req.error);
+  });
+}
+function dbPut(store, obj){
+  return new Promise((res,rej)=>{
+    const tx = db.transaction(store,'readwrite');
+    tx.objectStore(store).put(obj).onsuccess = ()=>res();
+    tx.onerror = ()=>rej(tx.error);
+  });
+}
+function dbGet(store, key){
+  return new Promise((res,rej)=>{
+    const tx = db.transaction(store,'readonly');
+    const req = tx.objectStore(store).get(key);
+    req.onsuccess = ()=>res(req.result);
+    req.onerror = ()=>rej(req.error);
+  });
+}
+function dbGetAll(store){
+  return new Promise((res,rej)=>{
+    const tx = db.transaction(store,'readonly');
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = ()=>res(req.result);
+    req.onerror = ()=>rej(req.error);
+  });
+}
+function dbDelete(store, key){
+  return new Promise((res,rej)=>{
+    const tx = db.transaction(store,'readwrite');
+    tx.objectStore(store).delete(key).onsuccess = ()=>res();
+    tx.onerror = ()=>rej(tx.error);
+  });
+}
+
+// ─── CRYPTO ───
+async function deriveKey(passphrase, salt){
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(passphrase), {name:'PBKDF2'}, false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    {name:'PBKDF2', salt, hash:'SHA-256', iterations:600000},
+    keyMaterial, {name:'AES-GCM',length:256}, true, ['encrypt','decrypt']
+  );
+}
+async function encryptData(key, data){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({name:'AES-GCM',iv}, key, data);
+  return {iv, ciphertext: new Uint8Array(ct)};
+}
+async function decryptData(key, iv, ciphertext){
+  return crypto.subtle.decrypt({name:'AES-GCM',iv}, key, ciphertext);
+}
+async function keyFingerprint(key){
+  const raw = await crypto.subtle.exportKey('raw', key);
+  const hash = await crypto.subtle.digest('SHA-256', raw);
+  return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function bufToHex(buf){ return Array.from(buf).map(b=>b.toString(16).padStart(2,'0')).join(''); }
+function hexToBuf(hex){ return new Uint8Array(hex.match(/.{2}/g).map(b=>parseInt(b,16))); }
+function randId(){ return crypto.randomUUID(); }
+
+// ─── AUTH ───
+function switchTab(tab){
+  const isLogin = tab === 'login';
+  document.getElementById('loginForm').style.display = isLogin?'block':'none';
+  document.getElementById('createForm').style.display = isLogin?'none':'block';
+  document.getElementById('tabLogin').classList.toggle('active', isLogin);
+  document.getElementById('tabCreate').classList.toggle('active', !isLogin);
+}
+
+function checkStrength(input){
+  const v = input.value, bar = document.getElementById('strengthBar');
+  let s = 0;
+  if(v.length>=12) s++;
+  if(/[A-Z]/.test(v)) s++;
+  if(/[0-9]/.test(v)) s++;
+  if(/[^A-Za-z0-9]/.test(v)) s++;
+  bar.className = 'strength-bar' + (s<=1?' weak':s<=2?' medium':' strong');
+}
+
+async function unlockVault(){
+  const vid = document.getElementById('vaultId').value.trim();
+  const pass = document.getElementById('passphrase').value;
+  if(!vid||!pass){ toast('Enter vault ID and passphrase','warning'); return; }
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Deriving key...';
+  try{
+    await openDB();
+    const meta = await dbGet(META_STORE, 'vault_' + vid);
+    let salt;
+    if(meta){ salt = hexToBuf(meta.salt); }
+    else{
+      salt = crypto.getRandomValues(new Uint8Array(16));
+      await dbPut(META_STORE,{key:'vault_'+vid, salt:bufToHex(salt), created:Date.now()});
+    }
+    masterKey = await deriveKey(pass, salt);
+    vaultSalt = bufToHex(salt);
+    vaultId = vid;
+    userName = vid.substring(0,2).toUpperCase();
+    await loadVaultFiles();
+    document.getElementById('authScreen').style.display='none';
+    document.getElementById('app').classList.add('visible');
+    document.getElementById('vaultLabel').textContent = 'Vault: ' + vid;
+    document.getElementById('userAvatar').textContent = userName;
+    document.getElementById('saltDisplay').textContent = vaultSalt.substring(0,16)+'…';
+    showView('dash');
+    addLog('🔓','Vault unlocked: '+vid);
+    toast('Vault unlocked successfully!','success');
+    updateStats();
+  }catch(e){ toast('Error: '+e.message,'error'); }
+  finally{ btn.disabled=false; btn.innerHTML='🔓 Unlock Vault'; }
+}
+
+async function createVault(){
+  const vid = document.getElementById('newVaultId').value.trim();
+  const pass = document.getElementById('newPass').value;
+  const conf = document.getElementById('confirmPass').value;
+  if(!vid||!pass){ toast('Fill all fields','warning'); return; }
+  if(pass!==conf){ toast('Passphrases do not match','error'); return; }
+  if(pass.length<8){ toast('Passphrase too short (min 8 chars)','warning'); return; }
+  document.getElementById('vaultId').value = vid;
+  document.getElementById('passphrase').value = pass;
+  switchTab('login');
+  await unlockVault();
+}
+
+function lockVault(){
+  masterKey = null; vaultId = null; allFiles = [];
+  document.getElementById('app').classList.remove('visible');
+  document.getElementById('authScreen').style.display='flex';
+  document.getElementById('passphrase').value='';
+  toast('Vault locked','info');
+}
+
+// ─── FILE OPS ───
+async function loadVaultFiles(){
+  if(!db) return;
+  const all = await dbGetAll(STORE);
+  allFiles = all.filter(f=>f.vault===vaultId);
+  renderFiles();
+}
+
+function triggerUpload(){ document.getElementById('fileInput').click(); }
+
+async function handleFiles(files){
+  for(const file of files) await encryptAndStore(file);
+  updateStats();
+}
+
+async function encryptAndStore(file){
+  if(!masterKey){ toast('No master key','error'); return; }
+  const t = toast(`Encrypting ${file.name}…`,'info', true);
+  try{
+    const buf = await file.arrayBuffer();
+    const {iv, ciphertext} = await encryptData(masterKey, buf);
+    const id = randId();
+    const record = {
+      id, vault: vaultId, name: file.name, type: file.type||'application/octet-stream',
+      size: file.size, encSize: ciphertext.length,
+      iv: bufToHex(iv), ciphertext: Array.from(ciphertext),
+      uploaded: Date.now()
+    };
+    await dbPut(STORE, record);
+    allFiles.push(record);
+    removeToast(t);
+    toast(`${file.name} encrypted & stored!`,'success');
+    addLog('🔒','Encrypted: '+file.name+' ('+fmtSize(file.size)+')');
+    renderFiles();
+    document.getElementById('fileInput').value='';
+  }catch(e){ removeToast(t); toast('Encryption failed: '+e.message,'error'); }
+}
+
+async function downloadFile(id){
+  const rec = allFiles.find(f=>f.id===id);
+  if(!rec||!masterKey) return;
+  const t = toast(`Decrypting ${rec.name}…`,'info',true);
+  try{
+    const iv = hexToBuf(rec.iv);
+    const ct = new Uint8Array(rec.ciphertext);
+    const plain = await decryptData(masterKey, iv, ct);
+    const blob = new Blob([plain],{type:rec.type});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=rec.name; a.click();
+    URL.revokeObjectURL(url);
+    removeToast(t);
+    toast(`${rec.name} decrypted & downloaded!`,'success');
+    addLog('⬇️','Decrypted & downloaded: '+rec.name);
+  }catch(e){ removeToast(t); toast('Decryption failed: '+e.message,'error'); }
+}
+
+async function deleteFile(id){
+  const rec = allFiles.find(f=>f.id===id);
+  if(!rec) return;
+  await dbDelete(STORE, id);
+  allFiles = allFiles.filter(f=>f.id!==id);
+  if(selectedFileId===id){ selectedFileId=null; document.getElementById('detailPanel').classList.add('hidden'); }
+  renderFiles(); updateStats();
+  addLog('🗑️','Deleted: '+rec.name);
+  toast(rec.name+' deleted','info');
+}
+
+async function shareFile(id){
+  const rec = allFiles.find(f=>f.id===id);
+  if(!rec||!masterKey) return;
+  // Export a "share token" = IV + first 8 bytes of ciphertext fingerprint (demo)
+  const fp = await keyFingerprint(masterKey);
+  const shareData = JSON.stringify({file:rec.name,iv:rec.iv,keyFp:fp.substring(0,32)+'…',note:'Share this key securely. Recipient must have the file ciphertext.'});
+  document.getElementById('shareKey').textContent = shareData;
+  openModal('shareModal');
+  addLog('🔗','Shared key for: '+rec.name);
+}
+
+function copyShareKey(){
+  const txt = document.getElementById('shareKey').textContent;
+  navigator.clipboard.writeText(txt).then(()=>toast('Key copied to clipboard!','success'));
+}
+
+// ─── RENDER ───
+function getIcon(type=''){
+  if(type.startsWith('image')) return '🖼️';
+  if(type.includes('pdf')) return '📕';
+  if(type.includes('word')||type.includes('doc')) return '📘';
+  if(type.includes('sheet')||type.includes('excel')||type.includes('csv')) return '📗';
+  if(type.includes('zip')||type.includes('rar')||type.includes('tar')) return '📦';
+  if(type.includes('audio')) return '🎵';
+  if(type.includes('video')) return '🎬';
+  if(type.includes('text')||type.includes('javascript')||type.includes('json')) return '📝';
+  return '📄';
+}
+
+function getCategory(type=''){
+  if(type.startsWith('image')) return 'images';
+  if(type.includes('pdf')||type.includes('doc')||type.includes('word')||type.includes('text')) return 'docs';
+  return 'other';
+}
+
+function fmtSize(b){
+  if(b<1024) return b+'B';
+  if(b<1024*1024) return (b/1024).toFixed(1)+'KB';
+  return (b/1024/1024).toFixed(2)+'MB';
+}
+function fmtDate(ts){ return new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+
+function getFilteredFiles(filter, search=''){
+  let f = allFiles;
+  if(filter==='docs') f = f.filter(x=>getCategory(x.type)==='docs');
+  else if(filter==='images') f = f.filter(x=>getCategory(x.type)==='images');
+  else if(filter==='other') f = f.filter(x=>getCategory(x.type)==='other');
+  if(search) f = f.filter(x=>x.name.toLowerCase().includes(search.toLowerCase()));
+  return f;
+}
+
+function renderFiles(){
+  const files = getFilteredFiles(currentFilter, document.getElementById('searchInput').value);
+  const grid = document.getElementById('fileGrid');
+  const list = document.getElementById('fileList');
+  const empty = document.getElementById('emptyState');
+  const gridWrap = document.getElementById('fileGrid');
+  const listWrap = document.getElementById('fileListWrap');
+
+  if(!files.length){ empty.style.display='flex'; gridWrap.style.display='none'; listWrap.style.display='none'; return; }
+  empty.style.display='none';
+
+  if(currentView==='grid'){
+    gridWrap.style.display='grid'; listWrap.style.display='none';
+    grid.innerHTML = files.map(f=>`
+      <div class="file-card ${selectedFileId===f.id?'selected':''}" onclick="selectFile('${f.id}')">
+        <div class="fc-icon">${getIcon(f.type)}</div>
+        <div class="fc-name">${esc(f.name)}</div>
+        <div class="fc-meta">${fmtSize(f.size)}<span class="enc-badge">🔒 ENC</span></div>
+      </div>
+    `).join('');
+  } else {
+    gridWrap.style.display='none'; listWrap.style.display='block';
+    list.innerHTML = files.map(f=>`
+      <div class="file-row ${selectedFileId===f.id?'selected':''}" onclick="selectFile('${f.id}')">
+        <span class="fr-icon">${getIcon(f.type)}</span>
+        <span class="fr-name">${esc(f.name)}</span>
+        <span class="fr-size">${fmtSize(f.size)}</span>
+        <span class="fr-date">${fmtDate(f.uploaded)}</span>
+        <span class="fr-enc">🔒 ENC</span>
+        <span class="fr-actions">
+          <button class="icon-btn" onclick="event.stopPropagation();downloadFile('${f.id}')" title="Download">⬇️</button>
+          <button class="icon-btn danger" onclick="event.stopPropagation();deleteFile('${f.id}')" title="Delete">🗑️</button>
+        </span>
+      </div>
+    `).join('');
+  }
+  document.getElementById('cnt-all').textContent = allFiles.length;
+}
+
+function selectFile(id){
+  selectedFileId = id;
+  const rec = allFiles.find(f=>f.id===id);
+  if(!rec) return;
+  renderFiles();
+  const panel = document.getElementById('detailPanel');
+  panel.classList.remove('hidden');
+  document.getElementById('dp-icon').textContent = getIcon(rec.type);
+  document.getElementById('dp-name').textContent = rec.name;
+  document.getElementById('dp-size').textContent = fmtSize(rec.size);
+  document.getElementById('dp-encsize').textContent = fmtSize(rec.encSize);
+  document.getElementById('dp-iv').textContent = rec.iv.substring(0,16)+'…';
+  document.getElementById('dp-date').textContent = fmtDate(rec.uploaded);
+}
+
+function downloadSelected(){ if(selectedFileId) downloadFile(selectedFileId); }
+function shareSelected(){ if(selectedFileId) shareFile(selectedFileId); }
+function deleteSelected(){ if(selectedFileId) deleteFile(selectedFileId); }
+
+function toggleView(){
+  currentView = currentView==='grid'?'list':'grid';
+  document.getElementById('viewToggleBtn').textContent = currentView==='grid'?'☰ List':'⊞ Grid';
+  renderFiles();
+}
+
+function filterFiles(q){ renderFiles(); }
+
+function updateStats(){
+  const total = allFiles.reduce((s,f)=>s+f.encSize,0);
+  const pct = Math.min(100, (total/(100*1024*1024))*100);
+  document.getElementById('storageUsed').textContent = fmtSize(total);
+  document.getElementById('storageFill').style.width = pct+'%';
+  document.getElementById('dc-files').textContent = allFiles.length;
+  document.getElementById('dc-size').textContent = fmtSize(total);
+  document.getElementById('cnt-all').textContent = allFiles.length;
+}
+
+// ─── VIEWS ───
+function showView(view, filter='all'){
+  currentFilter = filter;
+  document.getElementById('dashView').classList.toggle('active', view==='dash');
+  document.getElementById('filesView').classList.toggle('active', view==='files');
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  if(view==='dash') document.getElementById('nav-dash').classList.add('active');
+  else if(filter==='all') document.getElementById('nav-all').classList.add('active');
+  else if(filter==='docs') document.getElementById('nav-docs').classList.add('active');
+  else if(filter==='images') document.getElementById('nav-images').classList.add('active');
+  else document.getElementById('nav-other').classList.add('active');
+  if(view==='files') renderFiles();
+}
+
+// ─── DRAG & DROP ───
+function dragOver(e){ e.preventDefault(); e.currentTarget.classList.add('dragover'); }
+function dragLeave(e){ e.currentTarget.classList.remove('dragover'); }
+function dropFiles(e){
+  e.preventDefault(); e.currentTarget.classList.remove('dragover');
+  handleFiles(e.dataTransfer.files);
+}
+
+// ─── MODALS ───
+function openModal(id){ document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id){ document.getElementById(id).classList.add('hidden'); }
+
+async function showKeyInfo(){
+  openModal('keyModal');
+  if(masterKey){
+    const fp = await keyFingerprint(masterKey);
+    document.getElementById('keyFingerprint').textContent = fp;
+  }
+}
+
+// ─── TOASTS ───
+let toastCount = 0;
+function toast(msg, type='info', sticky=false){
+  const id = 'toast-'+(toastCount++);
+  const icons = {success:'✅',error:'❌',info:'ℹ️',warning:'⚠️'};
+  const el = document.createElement('div');
+  el.className = `toast ${type}`; el.id = id;
+  el.innerHTML = `<span class="t-icon">${icons[type]||'ℹ️'}</span><span>${msg}</span>`;
+  document.getElementById('toastContainer').appendChild(el);
+  if(!sticky) setTimeout(()=>el.remove(), 3500);
+  return id;
+}
+function removeToast(id){ const el = document.getElementById(id); if(el) el.remove(); }
+
+// ─── ACTIVITY LOG ───
+function addLog(icon, text){
+  const log = document.getElementById('actLog');
+  const el = document.createElement('div');
+  el.className = 'act-item';
+  const now = new Date().toLocaleTimeString();
+  el.innerHTML = `<span class="act-icon">${icon}</span><span class="act-text">${esc(text)}</span><span class="act-time">${now}</span>`;
+  log.prepend(el);
+  if(log.children.length>50) log.lastChild.remove();
+}
+
+// ─── UTIL ───
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){ selectedFileId=null; document.getElementById('detailPanel').classList.add('hidden'); renderFiles(); }
+  if(e.key==='Delete'&&selectedFileId) deleteSelected();
+  if((e.ctrlKey||e.metaKey)&&e.key==='o'){ e.preventDefault(); triggerUpload(); }
+});
+
+// Also support drag-drop on the full app
+document.body.addEventListener('dragover', e=>{ if(document.getElementById('app').classList.contains('visible')) e.preventDefault(); });
+document.body.addEventListener('drop', e=>{
+  e.preventDefault();
+  if(document.getElementById('app').classList.contains('visible')) handleFiles(e.dataTransfer.files);
+});
+</script>
+</body>
+</html>
